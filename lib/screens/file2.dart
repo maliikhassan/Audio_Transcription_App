@@ -10,6 +10,10 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:translator/translator.dart';
 
 class SecondPage extends StatefulWidget {
+
+  final String? initialText; // Accept text input in constructor
+
+  SecondPage({this.initialText});
   @override
   _SecondPageState createState() => _SecondPageState();
 }
@@ -31,6 +35,8 @@ class _SecondPageState extends State<SecondPage> {
   @override
   void initState() {
     super.initState();
+        _recognizedText = widget.initialText ?? ""; // Use initialText if provided
+
     _initializeTts();
     _checkSpeechAvailability();
     _setupAudioCaptureListener(); // 🔹 Set up listener for system audio capture
@@ -112,71 +118,7 @@ class _SecondPageState extends State<SecondPage> {
     });
   }
 
-  Future<void> _pickAndDubAudioFile() async {
-    try {
-      // Pick an audio file
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.audio, // Restrict to audio files
-      );
-
-      if (result != null && result.files.single.path != null) {
-        setState(() {
-          _selectedAudioFile = File(result.files.single.path!);
-          _recognizedText = ""; // Reset recognized text
-          _translatedText = ""; // Reset translated text
-        });
-
-        // Process the audio file (speech-to-text)
-        await _processAudioFile();
-      } else {
-        print("No audio file selected.");
-      }
-    } catch (e) {
-      print("Error picking audio file: $e");
-    }
-  }
-
-  Future<String> _transcribeWithAzure(File audioFile) async {
-  final apiKey = "YOUR_API_KEY"; // Remove key from code! Use .env
-  final region = "eastus";
   
-  try {
-    // 1. Validate audio duration (Azure free tier has limits)
-    final audioLength = await _getAudioDuration(audioFile);
-    if (audioLength > 60) {
-      throw Exception("Azure free tier max: 60 seconds. Your file: ${audioLength}s");
-    }
-
-    // 2. Prepare request
-    final url = Uri.parse(
-      'https://$region.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US',
-    );
-
-    final response = await http.post(
-      url,
-      headers: {
-        'Ocp-Apim-Subscription-Key': apiKey,
-        'Content-Type': 'audio/wav; codec=audio/pcm; samplerate=16000',
-      },
-      body: await audioFile.readAsBytes(),
-    );
-
-    // 3. Enhanced response handling
-    final result = jsonDecode(response.body);
-    debugPrint("Azure RAW Response: $result"); // Log full response
-
-    if (response.statusCode == 200) {
-      return result['DisplayText'] ?? 
-             result['RecognitionStatus'] ?? 
-             "Error: No transcription (Status: ${result['RecognitionStatus']})";
-    } else {
-      throw Exception("Azure Error ${response.statusCode}: ${response.body}");
-    }
-  } catch (e) {
-    debugPrint("Transcription failed: $e");
-    return "Transcription Error: ${e.toString()}";
-  }
-}
 
 Future<double> _getAudioDuration(File file) async {
   // Implement using flutter_ffmpeg or similar package
@@ -184,25 +126,7 @@ Future<double> _getAudioDuration(File file) async {
 }
 
   // New Function: Process Audio File for Speech Recognition
-  Future<void> _processAudioFile() async {
-  if (_selectedAudioFile == null) return;
-
-  setState(() => _recognizedText = "Processing audio...");
   
-  try {
-    final transcription = await _transcribeWithAzure(_selectedAudioFile!);
-    
-    setState(() {
-      _recognizedText = transcription;
-      // Only proceed if we got valid text
-      if (!transcription.contains("Error") && transcription.trim().isNotEmpty) {
-        _translateText(); // Auto-translate
-      }
-    });
-  } catch (e) {
-    setState(() => _recognizedText = "Processing failed: ${e.toString()}");
-  }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -257,6 +181,7 @@ Future<double> _getAudioDuration(File file) async {
                   DropdownMenuItem(value: "de", child: Text("German")),
                   DropdownMenuItem(value: "zh-cn", child: Text("Chinese")),
                   DropdownMenuItem(value: "ur", child: Text("Urdu")),
+                  DropdownMenuItem(value: "ar", child: Text("Arabic")),
                 ],
                 onChanged: (String? newValue) {
                   if (newValue != null) {
@@ -273,10 +198,7 @@ Future<double> _getAudioDuration(File file) async {
                 child: const Text("Start System Audio Capture"),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _pickAndDubAudioFile, // New button for picking audio
-                child: const Text("Pick Audio File & Dub"),
-              ),
+              
               SizedBox(height: 20,),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,

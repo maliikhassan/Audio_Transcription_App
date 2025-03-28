@@ -5,6 +5,9 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:untitled1/screens/file4.dart';
+import 'package:video_player/video_player.dart';
 
 class AudioExtractor extends StatefulWidget {
   @override
@@ -12,8 +15,10 @@ class AudioExtractor extends StatefulWidget {
 }
 
 class _AudioExtractorState extends State<AudioExtractor> {
+  late VideoPlayerController _controller;
   String? _status;
   String? _selectedVideoPath;
+  String? _savedAudioPath;
   final String apiKey = '3f0c4c936d8967a82c25adb39ea47e15';
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
@@ -52,7 +57,7 @@ class _AudioExtractorState extends State<AudioExtractor> {
         return;
       }
 
-      // Step 1: Start conversion job
+      // Step 1: Start conversion
       var startUrl = Uri.parse('https://api.convertio.co/convert');
       var startBody = jsonEncode({
         'apikey': apiKey,
@@ -75,7 +80,7 @@ class _AudioExtractorState extends State<AudioExtractor> {
 
       String conversionId = startJson['data']['id'];
 
-      // Step 2: Upload the video file
+      // Step 2: Upload video
       var uploadUrl = Uri.parse('https://api.convertio.co/convert/$conversionId/$filename');
       var uploadRequest = http.Request('PUT', uploadUrl)
         ..headers['Content-Type'] = 'application/octet-stream'
@@ -119,18 +124,27 @@ class _AudioExtractorState extends State<AudioExtractor> {
         return;
       }
 
-      // Step 4: Get the MP3 bytes and play them
-      setState(() => _status = "Converting and preparing to play...");
+      // Step 4: Download MP3 and save locally
+      setState(() => _status = "Downloading MP3...");
       var audioResponse = await http.get(Uri.parse(downloadUrl));
-      
-      // Play the audio directly from bytes
-      await _audioPlayer.play(BytesSource(audioResponse.bodyBytes));
+      Directory tempDir = await getTemporaryDirectory();
+      String localFilePath = '${tempDir.path}/converted_audio.mp3';
+      File localAudioFile = File(localFilePath);
+      await localAudioFile.writeAsBytes(audioResponse.bodyBytes);
+
       setState(() {
-        _status = "Playing audio";
-        _isPlaying = true;
+        _savedAudioPath = localFilePath;
+        _status = "Audio saved: $_savedAudioPath";
       });
 
-      // Listen for when audio completes
+      // Play the audio
+      await _audioPlayer.play(BytesSource(audioResponse.bodyBytes));
+      setState(() {
+        _isPlaying = true;
+        _status = "Playing audio";
+      });
+
+      // Listen for when audio finishes
       _audioPlayer.onPlayerStateChanged.listen((state) {
         if (state == PlayerState.completed) {
           setState(() {
@@ -183,6 +197,15 @@ class _AudioExtractorState extends State<AudioExtractor> {
               child: Text("Stop Playback"),
             ),
             SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: (){
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SpeechToTextScreen(audioFilePath: _savedAudioPath.toString())),
+                );
+              },
+              child: Text("Convert to Text"),
+            ),
             Text(_status ?? "Select a video to convert and play"),
           ],
         ),
