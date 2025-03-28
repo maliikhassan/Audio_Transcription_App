@@ -66,7 +66,117 @@ class _AudioExtractorState extends State<AudioExtractor> {
       setState(() => _status = "Please select a video file first");
       return;
     }
-    // ... (rest of the _convertVideoToMp3 method remains unchanged)
+
+    try {
+      final String videoPath = _selectedVideoPath!;
+      final String filename = videoPath.split('/').last;
+      final File videoFile = File(videoPath);
+
+      if (!await videoFile.exists()) {
+        setState(() => _status = "Video file not found at $videoPath");
+        return;
+      }
+
+      // Step 1: Start conversion
+      var startUrl = Uri.parse('https://api.convertio.co/convert');
+      var startBody = jsonEncode({
+        'apikey': apiKey,
+        'input': 'upload',
+        'outputformat': 'mp3',
+        'filename': filename,
+      });
+
+      var startResponse = await http.post(
+        startUrl,
+        headers: {'Content-Type': 'application/json'},
+        body: startBody,
+      );
+
+      var startJson = jsonDecode(startResponse.body);
+      if (startJson['status'] != 'ok') {
+        setState(() => _status = "Start failed: ${startJson['error']}");
+        return;
+      }
+
+      String conversionId = startJson['data']['id'];
+
+      // Step 2: Upload video
+      var uploadUrl = Uri.parse('https://api.convertio.co/convert/$conversionId/$filename');
+      var uploadRequest = http.Request('PUT', uploadUrl)
+        ..headers['Content-Type'] = 'application/octet-stream'
+        ..bodyBytes = await videoFile.readAsBytes();
+
+      var uploadResponse = await uploadRequest.send();
+      var uploadBody = await uploadResponse.stream.bytesToString();
+      var uploadJson = jsonDecode(uploadBody);
+
+      if (uploadJson['status'] != 'ok') {
+        setState(() => _status = "Upload failed: ${uploadJson['error']}");
+        return;
+      }
+
+      // Step 3: Poll conversion status
+      String step = 'wait';
+      String? downloadUrl;
+      while (step != 'finish') {
+        await Future.delayed(Duration(seconds: 2));
+        var statusUrl = Uri.parse('https://api.convertio.co/convert/$conversionId/status');
+        var statusResponse = await http.get(statusUrl);
+        var statusJson = jsonDecode(statusResponse.body);
+
+        if (statusJson['status'] != 'ok') {
+          setState(() => _status = "Status check failed: ${statusJson['error']}");
+          return;
+        }
+
+        step = statusJson['data']['step'];
+        if (step == 'finish') {
+          downloadUrl = statusJson['data']['output']['url'];
+          break;
+        } else if (step == 'error') {
+          setState(() => _status = "Conversion error: ${statusJson['data']['error']}");
+          return;
+        }
+      }
+
+      if (downloadUrl == null) {
+        setState(() => _status = "Failed to retrieve download URL");
+        return;
+      }
+
+      // Step 4: Download MP3 and save locally
+      setState(() => _status = "Downloading MP3...");
+      var audioResponse = await http.get(Uri.parse(downloadUrl));
+      Directory tempDir = await getTemporaryDirectory();
+      String localFilePath = '${tempDir.path}/converted_audio.mp3';
+      File localAudioFile = File(localFilePath);
+      await localAudioFile.writeAsBytes(audioResponse.bodyBytes);
+
+      setState(() {
+        _savedAudioPath = localFilePath;
+        _status = "Audio saved: $_savedAudioPath";
+      });
+
+      // Play the audio
+      await _audioPlayer.play(BytesSource(audioResponse.bodyBytes));
+      setState(() {
+        _isPlaying = true;
+        _status = "Playing audio";
+      });
+
+      // Listen for when audio finishes
+      _audioPlayer.onPlayerStateChanged.listen((state) {
+        if (state == PlayerState.completed) {
+          setState(() {
+            _isPlaying = false;
+            _status = "Audio finished playing";
+          });
+        }
+      });
+
+    } catch (e) {
+      setState(() => _status = "Error: $e");
+    }
   }
 
   // Stop audio playback
