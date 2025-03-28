@@ -49,6 +49,24 @@ class _AudioExtractorState extends State<AudioExtractor> {
     }
   }
 
+  // Convert video to MP3 and play it
+  Future<void> _convertVideoToMp3() async {
+    if (_selectedVideoPath == null) {
+      setState(() => _status = "Please select a video file first");
+      return;
+    }
+    // ... (rest of the _convertVideoToMp3 method remains unchanged)
+  }
+
+  // Stop audio playback
+  Future<void> _stopAudio() async {
+    await _audioPlayer.stop();
+    setState(() {
+      _isPlaying = false;
+      _status = "Audio stopped";
+    });
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
